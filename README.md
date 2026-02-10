@@ -1,4 +1,4 @@
-# Futbol – FlickLens
+ï»¿# Futbol â€“ FlickLens
 
 ## Objective
 FlickLens is a lightweight football analysis pipeline to profile team styles and generate Pep-inspired tactical summaries using publicly available data. It prioritizes clear, coach-friendly outputs (text reports + visuals) built from StatsBomb Open Data.
@@ -9,6 +9,7 @@ FlickLens is a lightweight football analysis pipeline to profile team styles and
 - **Pep-style tactical section** in the Barcelona report.
 - **Visuals** comparing Barcelona to league averages and rivals.
 - **Bundled PDF report** with text + charts.
+- **Lineup report** with matches and minutes played per player.
 
 ## Data Source
 This project uses StatsBomb Open Data (public) from the official repository.
@@ -16,13 +17,15 @@ This project uses StatsBomb Open Data (public) from the official repository.
 Note: La Liga 2025/2026 is **not available** in open data. The latest La Liga available is 2020/2021 (partial matches).
 
 ## Project Structure
-- `scout_flick.py` – Main report generator. Uses StatsBomb CSV if present; otherwise tries FBref.
-- `scripts/fetch_statsbomb_open_data.py` – Downloads open data from StatsBomb.
-- `scripts/statsbomb_team_report.py` – Builds team metrics CSVs from StatsBomb event data.
-- `data/statsbomb_open_data/` – Downloaded competitions/matches/events/lineups.
-- `visuals/` – Generated charts.
-- `barca_report.txt` – Pep-style text report.
-- `barca_report_bundle.pdf` – Text + charts bundle.
+- `scout_flick.py` â€“ Main report generator. Uses StatsBomb CSV if present; otherwise tries FBref.
+- `scripts/fetch_statsbomb_open_data.py` â€“ Downloads open data from StatsBomb.
+- `scripts/statsbomb_team_report.py` â€“ Builds team metrics CSVs from StatsBomb event data.
+- `scripts/barca_lineup_report.py` â€“ Builds lineup table with matches and minutes.
+- `data/statsbomb_open_data/` â€“ Downloaded competitions/matches/events/lineups.
+- `visuals/` â€“ Generated charts.
+- `barca_report.txt` â€“ Pep-style text report.
+- `barca_report_bundle.pdf` â€“ Text + charts bundle.
+- `docs/barca_lineup.md` â€“ Barcelona lineup with matches and minutes.
 
 ## Setup
 Install dependencies:
@@ -50,12 +53,21 @@ C:\Users\bnove\AppData\Local\Python\bin\python.exe scripts\statsbomb_team_report
 C:\Users\bnove\AppData\Local\Python\bin\python.exe scout_flick.py
 ```
 
+4. Generate lineup report:
+
+```powershell
+C:\Users\bnove\AppData\Local\Python\bin\python.exe scripts\barca_lineup_report.py
+```
+
 ## Outputs
-- `statsbomb_team_stats.csv` – All team metrics.
-- `statsbomb_team_stats_targets.csv` – Target teams subset.
-- `barca_report.txt` – Barcelona Pep-style report.
-- `visuals/*.png` – Charts.
-- `barca_report_bundle.pdf` – Combined PDF report.
+- `statsbomb_team_stats.csv` â€“ All team metrics.
+- `statsbomb_team_stats_targets.csv` â€“ Target teams subset.
+- `barca_report.txt` â€“ Barcelona Pep-style report.
+- `visuals/*.png` â€“ Charts.
+- `barca_report_bundle.pdf` â€“ Combined PDF report.
+- `docs/barca_lineup.md` â€“ Lineup table with matches and minutes.
+- `visuals/barca_matches_played.png` â€“ Matches played by all players.
+- `visuals/barca_minutes_played.png` â€“ Minutes played by all players.
 
 ## Notes
 - StatsBomb Open Data is partial. Some seasons have limited matches.
