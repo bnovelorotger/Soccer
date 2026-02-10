@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import time
 import io
 import os
+from pathlib import Path
 
 class FBRefScraper:
     def __init__(self, season="2025-2026"):
@@ -24,14 +25,68 @@ class FBRefScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
+    def fetch_html_requests(self, url):
+        response = requests.get(url, headers=self.headers)
+        response.raise_for_status()
+        if "Just a moment" in response.text:
+            raise Exception("Cloudflare challenge detected")
+        return response.text
+
+    def fetch_html_playwright(self, url):
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception as e:
+            raise Exception(f"Playwright not available: {e}")
+
+        user_data_dir = os.getenv("CHROME_USER_DATA_DIR")
+        profile_dir = os.getenv("CHROME_PROFILE_DIR", "Default")
+        headful = os.getenv("PLAYWRIGHT_HEADFUL", "").lower() in ("1", "true", "yes")
+
+        with sync_playwright() as p:
+            browser = None
+            if user_data_dir:
+                # Persistent profile (uses existing Chrome profile)
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir,
+                    channel="chrome",
+                    headless=not headful,
+                    args=[f"--profile-directory={profile_dir}"]
+                )
+            else:
+                # Fallback: new ephemeral profile
+                browser = p.chromium.launch(channel="chrome", headless=not headful)
+                context = browser.new_context()
+            page = context.new_page()
+            page.goto(url, wait_until='domcontentloaded', timeout=90000)
+            try:
+                page.wait_for_selector("table", timeout=120000)
+            except Exception:
+                # Give Cloudflare/challenges time if needed
+                page.wait_for_timeout(10000)
+            html = page.content()
+            context.close()
+            if browser is not None:
+                browser.close()
+
+        if "Just a moment" in html:
+            raise Exception("Cloudflare challenge still present in Playwright")
+        return html
+
+    def fetch_html(self, url):
+        try:
+            return self.fetch_html_requests(url)
+        except Exception as e:
+            print(f"Requests blocked or failed: {e}")
+            print("Trying Playwright with Chrome profile...")
+            return self.fetch_html_playwright(url)
+
     def get_league_stats(self, league_name, league_id):
         url = f"{self.base_url}/{league_id}/{self.season}/{league_name}-Stats"
         print(f"Fetching data from: {url}")
         
         try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
+            html = self.fetch_html(url)
+            soup = BeautifulSoup(html, 'html.parser')
             
             # FBref hides many tables in comments. We need to extract them.
             comments = soup.find_all(string=lambda text: isinstance(text, Comment))
@@ -153,7 +208,60 @@ class ReportGenerator:
         if 'Possession_PrgC' in team_data:
             rel_carry = (team_data['Possession_PrgC'] / self.avg_stats['Possession_PrgC'] - 1) * 100
             bullets.append(f"- **Progresión con Balón**: Sus conducciones progresivas están un {rel_carry:+.1f}% respecto a la media.")
+
+        # StatsBomb-derived (if available)
+        if 'Pass_Completion' in team_data:
+            rel_pc = (team_data['Pass_Completion'] / self.avg_stats['Pass_Completion'] - 1) * 100
+            bullets.append(f"- **Calidad de Pase**: Su % de pase completo está {rel_pc:+.1f}% vs media.")
+        if 'Possession_Share' in team_data:
+            rel_poss = (team_data['Possession_Share'] / self.avg_stats['Possession_Share'] - 1) * 100
+            bullets.append(f"- **Control de la Posesión**: Su cuota de posesión está {rel_poss:+.1f}% vs media.")
+        if 'Progressive_Passes_per_match' in team_data:
+            rel_prog = (team_data['Progressive_Passes_per_match'] / self.avg_stats['Progressive_Passes_per_match'] - 1) * 100
+            bullets.append(f"- **Progresión por Pase**: Sus pases progresivos por partido están {rel_prog:+.1f}% vs media.")
+        if 'Progressive_Carries_per_match' in team_data:
+            rel_prog_c = (team_data['Progressive_Carries_per_match'] / self.avg_stats['Progressive_Carries_per_match'] - 1) * 100
+            bullets.append(f"- **Progresión por Conducción**: Sus conducciones progresivas por partido están {rel_prog_c:+.1f}% vs media.")
+        if 'FinalThird_Entries_per_match' in team_data:
+            rel_f3 = (team_data['FinalThird_Entries_per_match'] / self.avg_stats['FinalThird_Entries_per_match'] - 1) * 100
+            bullets.append(f"- **Territorio (3er tercio)**: Entradas al 3er tercio {rel_f3:+.1f}% vs media.")
+        if 'Box_Entries_per_match' in team_data:
+            rel_box = (team_data['Box_Entries_per_match'] / self.avg_stats['Box_Entries_per_match'] - 1) * 100
+            bullets.append(f"- **Amenaza en Área**: Entradas al área {rel_box:+.1f}% vs media.")
             
+        return "\n".join(bullets)
+
+    def generate_pep_principles(self, team_name):
+        team_data = self.df[self.df['Team'] == team_name].iloc[0]
+        bullets = []
+
+        if 'Pass_Completion' in team_data and 'Passes_per_match' in team_data:
+            bullets.append(f"- **Control con balón**: Completa {team_data['Pass_Completion']:.2%} de sus pases con {team_data['Passes_per_match']:.1f} pases por partido.")
+        if 'Possession_Share' in team_data:
+            bullets.append(f"- **Dominio posicional**: Su cuota de posesión estimada es {team_data['Possession_Share']:.2%}.")
+        if 'Pass_Completion' in team_data and 'Possession_Share' in team_data:
+            bullets.append(f"- **Ritmo y seguridad**: Prioriza circulación segura para sostener el control territorial.")
+        if 'FinalThird_Entries_per_match' in team_data:
+            bullets.append(f"- **Ocupación de zonas**: Genera {team_data['FinalThird_Entries_per_match']:.1f} entradas al último tercio por partido.")
+        if 'Box_Entries_per_match' in team_data:
+            bullets.append(f"- **Amenaza estructurada**: Suma {team_data['Box_Entries_per_match']:.1f} entradas al área por partido.")
+        if 'FinalThird_Entries_per_match' in team_data and 'Box_Entries_per_match' in team_data:
+            ratio = team_data['Box_Entries_per_match'] / team_data['FinalThird_Entries_per_match'] if team_data['FinalThird_Entries_per_match'] else 0
+            bullets.append(f"- **Paciencia en el último tercio**: Convierte el {ratio:.1%} de entradas al último tercio en entradas al área.")
+        if 'Progressive_Passes_per_match' in team_data or 'Progressive_Carries_per_match' in team_data:
+            pp = team_data.get('Progressive_Passes_per_match', 0.0)
+            pc = team_data.get('Progressive_Carries_per_match', 0.0)
+            bullets.append(f"- **Progresión**: {pp:.1f} pases progresivos y {pc:.1f} conducciones progresivas por partido.")
+        if 'Progressive_Passes_per_match' in team_data and 'Passes_per_match' in team_data:
+            pct = team_data['Progressive_Passes_per_match'] / team_data['Passes_per_match'] if team_data['Passes_per_match'] else 0
+            bullets.append(f"- **Intencionalidad**: El {pct:.1%} de sus pases son progresivos.")
+        if 'Pressures_per_match' in team_data and 'Tackles_per_match' in team_data:
+            bullets.append(f"- **Presión tras pérdida**: {team_data['Pressures_per_match']:.1f} presiones y {team_data['Tackles_per_match']:.1f} tackles por partido.")
+        if 'Pressures_per_match' in team_data and 'Interceptions_per_match' in team_data:
+            bullets.append(f"- **Rest defense**: Combina {team_data['Pressures_per_match']:.1f} presiones con {team_data['Interceptions_per_match']:.1f} intercepciones por partido para sostener ataques largos.")
+        if 'xG_per_shot' in team_data:
+            bullets.append(f"- **Calidad de tiro**: xG por disparo de {team_data['xG_per_shot']:.3f}.")
+
         return "\n".join(bullets)
 
     def generate_actionable_insights(self, team_name):
@@ -161,15 +269,15 @@ class ReportGenerator:
         insights = []
         
         # Insight 1: Strength in Verticality/Progression
-        if team_data['verticality_index'] > self.avg_stats['verticality_index'] * 1.1:
+        if 'verticality_index' in team_data.index and 'verticality_index' in self.avg_stats.index and team_data['verticality_index'] > self.avg_stats['verticality_index'] * 1.1:
             insights.append(f"1. **Fortaleza Vertical**: {team_name} ignora el control horizontal excesivo, priorizando envíos directos que rompen líneas.")
-        elif team_data['field_tilt_proxy'] > self.avg_stats['field_tilt_proxy'] * 1.1:
+        elif 'field_tilt_proxy' in team_data.index and 'field_tilt_proxy' in self.avg_stats.index and team_data['field_tilt_proxy'] > self.avg_stats['field_tilt_proxy'] * 1.1:
             insights.append(f"1. **Dominio Territorial**: El equipo asfixia al rival instalándose permanentemente en campo contrario.")
         else:
             insights.append(f"1. **Estilo Mixto**: El equipo mantiene un equilibrio entre posesión y progresión vertical.")
 
         # Insight 2: Weakness relative point
-        if 'Expected_xGA' in team_data and team_data['Expected_xGA'] > self.avg_stats['Expected_xGA']:
+        if 'Expected_xGA' in team_data.index and 'Expected_xGA' in self.avg_stats.index and team_data['Expected_xGA'] > self.avg_stats['Expected_xGA']:
             insights.append(f"2. **Vulnerabilidad Defensiva**: Pese a su ataque, concede un xG en contra elevado ({team_data['Expected_xGA']:.2f}), sugiriendo riesgos en transiciones.")
         else:
             insights.append(f"2. **Solidez Estructural**: Logra mantener un xGA por debajo de la media, validando su sistema defensivo.")
@@ -177,37 +285,51 @@ class ReportGenerator:
         # Insight 3: Key Driver
         if 'Passing_PrgDist' in team_data:
             insights.append(f"3. **Motor del Juego**: La ganancia de metros vía pases ({team_data['Passing_PrgDist']:.0f}m) es el principal motor de su avance ofensivo.")
+        elif 'Progressive_Passes_per_match' in team_data:
+            insights.append(f"3. **Motor del Juego**: Genera {team_data['Progressive_Passes_per_match']:.1f} pases progresivos por partido como vía principal de avance.")
 
         return "\n".join(insights)
 
 from bs4 import Comment
 
-def main():
-    # Check if we should load local data if scraping fails
-    try:
-        scraper = FBRefScraper()
-        all_leagues_data = []
-        
-        for league, lid in scraper.leagues.items():
-            tables = scraper.get_league_stats(league, lid)
-            if tables:
-                df = scraper.process_data(tables)
-                all_leagues_data.append(df)
-                time.sleep(3) # Respectful scraping
+def load_statsbomb_team_stats():
+    sb_csv = Path("statsbomb_team_stats.csv")
+    if sb_csv.exists():
+        df = pd.read_csv(sb_csv)
+        return df
+    return None
 
-        if not all_leagues_data:
-            raise Exception("No web data found")
+def main():
+    # Prefer local StatsBomb-derived dataset if available
+    statsbomb_df = load_statsbomb_team_stats()
+    if statsbomb_df is not None and not statsbomb_df.empty:
+        final_df = statsbomb_df
+    else:
+        # Check if we should load local data if scraping fails
+        try:
+            scraper = FBRefScraper()
+            all_leagues_data = []
             
-        final_df = pd.concat(all_leagues_data, ignore_index=True)
-        final_df = scraper.engineer_features(final_df)
-    except Exception as e:
-        print(f"Web scraping issue or limited access: {e}")
-        print("Intentando cargar datos de ejemplo/manuales si existen...")
-        if os.path.exists("flick_scout_full.csv"):
-            final_df = pd.read_csv("flick_scout_full.csv")
-        else:
-            print("No hay datos disponibles. Por favor, exporta las tablas de FBref a CSV manualmente.")
-            return
+            for league, lid in scraper.leagues.items():
+                tables = scraper.get_league_stats(league, lid)
+                if tables:
+                    df = scraper.process_data(tables)
+                    all_leagues_data.append(df)
+                    time.sleep(3) # Respectful scraping
+
+            if not all_leagues_data:
+                raise Exception("No web data found")
+                
+            final_df = pd.concat(all_leagues_data, ignore_index=True)
+            final_df = scraper.engineer_features(final_df)
+        except Exception as e:
+            print(f"Web scraping issue or limited access: {e}")
+            print("Intentando cargar datos de ejemplo/manuales si existen...")
+            if os.path.exists("flick_scout_full.csv"):
+                final_df = pd.read_csv("flick_scout_full.csv")
+            else:
+                print("No hay datos disponibles. Por favor, exporta las tablas de FBref a CSV manualmente.")
+                return
 
     # Save full dataset
     final_df.to_csv("flick_scout_full.csv", index=False)
@@ -215,6 +337,8 @@ def main():
     # Filter for target teams
     target_teams = ["Barcelona", "Real Madrid", "Atlético Madrid", "Manchester City", "Bayern Munich", "Paris S-G"]
     target_data = final_df[final_df['Team'].isin(target_teams)].copy()
+    if not target_data.empty:
+        target_data.to_csv("flick_scout_top_teams.csv", index=False)
     
     # Reporting
     reporter = ReportGenerator(final_df)
@@ -223,6 +347,8 @@ def main():
         print("\n=== FLICKLENS REPORT: FC BARCELONA ===")
         print("\n--- Style Summary ---")
         print(reporter.generate_style_summary("Barcelona"))
+        print("\n--- Principios Pep (Lectura Tactica) ---")
+        print(reporter.generate_pep_principles("Barcelona"))
         print("\n--- Actionable Insights ---")
         print(reporter.generate_actionable_insights("Barcelona"))
         
@@ -230,6 +356,8 @@ def main():
         with open("barca_report.txt", "w", encoding="utf-8") as f:
             f.write("=== FLICKLENS REPORT: FC BARCELONA ===\n")
             f.write(reporter.generate_style_summary("Barcelona"))
+            f.write("\n\n--- Principios Pep (Lectura Tactica) ---\n")
+            f.write(reporter.generate_pep_principles("Barcelona"))
             f.write("\n\n--- Actionable Insights ---\n")
             f.write(reporter.generate_actionable_insights("Barcelona"))
     

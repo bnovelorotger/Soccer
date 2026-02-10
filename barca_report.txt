@@ -1,0 +1,23 @@
+=== FLICKLENS REPORT: FC BARCELONA ===
+- **Calidad de Pase**: Su % de pase completo está +13.3% vs media.
+- **Control de la Posesión**: Su cuota de posesión está +53.5% vs media.
+- **Progresión por Pase**: Sus pases progresivos por partido están +36.4% vs media.
+- **Progresión por Conducción**: Sus conducciones progresivas por partido están +48.6% vs media.
+- **Territorio (3er tercio)**: Entradas al 3er tercio +140.1% vs media.
+- **Amenaza en Área**: Entradas al área +82.5% vs media.
+
+--- Principios Pep (Lectura Tactica) ---
+- **Dominio posicional**: Su cuota de posesión estimada es 61.27%.
+- **Ritmo y seguridad**: Prioriza circulación segura para sostener el control territorial.
+- **Ocupación de zonas**: Genera 478.4 entradas al último tercio por partido.
+- **Amenaza estructurada**: Suma 68.4 entradas al área por partido.
+- **Paciencia en el último tercio**: Convierte el 14.3% de entradas al último tercio en entradas al área.
+- **Progresión**: 189.9 pases progresivos y 53.3 conducciones progresivas por partido.
+- **Presión tras pérdida**: 132.3 presiones y 0.0 tackles por partido.
+- **Rest defense**: Combina 132.3 presiones con 9.0 intercepciones por partido para sostener ataques largos.
+- **Calidad de tiro**: xG por disparo de 0.133.
+
+--- Actionable Insights ---
+1. **Estilo Mixto**: El equipo mantiene un equilibrio entre posesión y progresión vertical.
+2. **Solidez Estructural**: Logra mantener un xGA por debajo de la media, validando su sistema defensivo.
+3. **Motor del Juego**: Genera 189.9 pases progresivos por partido como vía principal de avance.
